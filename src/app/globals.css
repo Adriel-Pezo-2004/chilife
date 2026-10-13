@@ -1,0 +1,60 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f7f8f6;
+  --color-ink: #202b29;
+  --color-muted: #89918f;
+  --color-line: #e9ece9;
+  --color-mint: #39b98b;
+  --color-mint-card: #eaf8f2;
+  --color-mint-icon: #ddf5e9;
+  --color-blue: #5685e8;
+  --color-blue-card: #edf2ff;
+  --color-blue-icon: #e4ebff;
+  --color-lilac: #9472d5;
+  --color-lilac-card: #f3effb;
+  --color-lilac-icon: #eee7fa;
+  --color-peach: #e78b62;
+  --color-peach-card: #fff2eb;
+  --color-peach-icon: #ffebe1;
+  --color-yellow: #bf9a36;
+  --color-yellow-card: #fbf6e7;
+  --color-yellow-icon: #f7f0d6;
+  --font-sans: "DM Sans", sans-serif;
+  --font-display: "Manrope", sans-serif;
+  --shadow-card: 0 12px 30px rgba(30, 48, 43, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+strong {
+  font-family: var(--font-display);
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+input[type="number"] {
+  appearance: textfield;
+}
+
+::selection {
+  background: #d7f3e7;
+}
