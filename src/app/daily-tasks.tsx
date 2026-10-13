@@ -2,7 +2,7 @@
 
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Circle, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { categoryConfig, isCategoryKey, type CategoryKey } from "@/lib/life";
+import { categoryConfig, dailyTaskCompletionPercent, isCategoryKey, type CategoryKey } from "@/lib/life";
 
 export type DailyTask = {
   id: string;
@@ -48,7 +48,7 @@ const blankDraft = (dateKey: string): TaskDraft => ({
   description: "",
   categoryKey: "exercise",
   dateKey,
-  progressPercent: "10",
+  progressPercent: "0",
 });
 
 export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: DailyTasksProps) {
@@ -86,11 +86,6 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
   }, [onTasksChange, tasks]);
 
   const completedCount = tasks.filter((task) => task.completed).length;
-  const allocatedPercent = tasks.reduce((total, task) => total + task.progressPercent, 0);
-  const completionPercent = tasks.reduce(
-    (total, task) => total + (task.completed ? task.progressPercent : 0),
-    0,
-  );
   const sortedTasks = useMemo(
     () => [...tasks].sort((a, b) => Number(a.completed) - Number(b.completed)),
     [tasks],
@@ -112,7 +107,7 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
       !description ||
       description.length > 160 ||
       !Number.isInteger(progressPercent) ||
-      progressPercent < 1 ||
+      progressPercent < 0 ||
       progressPercent > 100
     ) return;
 
@@ -169,19 +164,20 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
     });
   }
 
-  async function toggleTask(task: DailyTask) {
+  async function saveTaskProgress(task: DailyTask, progressPercent: number) {
     setError("");
     try {
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completed: !task.completed }),
+        body: JSON.stringify({ progressPercent }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "No se pudo actualizar la tarea.");
       setTasks((current) => current.map((item) => (item.id === task.id ? data as DailyTask : item)));
       onTaskMutation();
     } catch (updateError) {
+      setTasks((current) => current.map((item) => (item.id === task.id ? task : item)));
       setError(updateError instanceof Error ? updateError.message : "No se pudo actualizar la tarea.");
     }
   }
@@ -210,7 +206,7 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
         <div>
           <p className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[1.3px] text-mint"><CalendarDays size={15} /> Tu día, a tu ritmo</p>
           <h2 className="mt-2 text-[22px] font-bold tracking-[-0.7px] text-ink">Avance del día</h2>
-          <p className="mt-1 text-[13px] text-muted">Asigna cada tarea a una de tus áreas, define cuánto aporta y marca lo que completas.</p>
+          <p className="mt-1 text-[13px] text-muted">Registra una sola tarea al día y actualiza el porcentaje que realmente completaste.</p>
         </div>
         <div className="flex w-fit items-center gap-3 rounded-xl border border-line bg-white px-3 py-2">
           <button onClick={() => changeDate(moveDate(dateKey, -1))} aria-label="Día anterior" className="rounded-lg p-1 text-muted transition hover:bg-canvas hover:text-ink"><ChevronLeft size={17} /></button>
@@ -251,8 +247,8 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
                 return (
                   <li key={task.id} className="flex items-start gap-3 py-3 first:pt-0">
                     <button
-                      aria-label={task.completed ? `Marcar "${task.description}" como pendiente` : `Completar "${task.description}"`}
-                      onClick={() => void toggleTask(task)}
+                      aria-label={task.completed ? `Marcar "${task.description}" como no completada` : `Marcar "${task.description}" al 100%`}
+                      onClick={() => void saveTaskProgress(task, task.completed ? 0 : 100)}
                       className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${task.completed ? "border-mint bg-mint text-white" : "border-line text-transparent hover:border-mint"}`}
                     >
                       {task.completed ? <Check size={12} strokeWidth={3} /> : <Circle size={17} />}
@@ -261,7 +257,35 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
                       <p className={`break-words text-[13px] font-semibold ${task.completed ? "text-muted line-through" : "text-ink"}`}>{task.description}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span className="inline-flex rounded-full bg-canvas px-2 py-0.5 text-[10px] font-medium text-muted">{category?.label ?? task.categoryKey}</span>
-                        <span className="inline-flex rounded-full bg-mint-card px-2 py-0.5 text-[10px] font-bold text-mint">+{task.progressPercent}% del día</span>
+                        <label className="inline-flex items-center gap-1 rounded-full bg-mint-card px-2 py-0.5 text-[10px] font-bold text-mint">
+                          <span>Completitud</span>
+                          <input
+                            aria-label={`Porcentaje completado de "${task.description}"`}
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={task.progressPercent}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              if (value === "") {
+                                setTasks((current) => current.map((item) => item.id === task.id ? { ...item, progressPercent: 0, completed: false } : item));
+                                return;
+                              }
+                              const progressPercent = Number(value);
+                              if (Number.isInteger(progressPercent) && progressPercent >= 0 && progressPercent <= 100) {
+                                setTasks((current) => current.map((item) => item.id === task.id ? { ...item, progressPercent, completed: progressPercent >= 80 } : item));
+                              }
+                            }}
+                            onBlur={(event) => {
+                              const progressPercent = Number(event.currentTarget.value);
+                              if (Number.isInteger(progressPercent) && progressPercent >= 0 && progressPercent <= 100 && progressPercent !== task.progressPercent) {
+                                void saveTaskProgress(task, progressPercent);
+                              }
+                            }}
+                            className="w-8 border-0 bg-transparent p-0 text-right text-[10px] font-bold text-mint outline-none focus:ring-0"
+                          />
+                          <span>%</span>
+                        </label>
                       </div>
                       {deletingId === task.id && (
                         <div className="mt-2 flex items-center gap-2 text-[11px]">
@@ -308,11 +332,11 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
                 {(Object.keys(categoryConfig) as CategoryKey[]).map((key) => <option key={key} value={key}>{categoryConfig[key].label}</option>)}
               </select>
               <label className="flex h-10 items-center gap-1.5 rounded-lg border border-line bg-white px-2.5">
-                <span className="text-[11px] font-semibold text-muted">Avance</span>
+                <span className="text-[11px] font-semibold text-muted">Completado</span>
                 <input
-                  aria-label="Porcentaje que aporta esta tarea al día"
+                  aria-label="Porcentaje completado de la tarea"
                   type="number"
-                  min="1"
+                  min="0"
                   max="100"
                   required
                   value={draft.progressPercent}
@@ -330,32 +354,29 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
                   className="h-10 rounded-lg border border-line bg-white px-2 text-[12px] text-ink outline-none focus:border-mint"
                 />
               )}
-              <button disabled={saving} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-[12px] font-bold text-white transition hover:bg-ink/90 disabled:opacity-60">
+              <button disabled={saving || (!editingId && tasks.length > 0)} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-[12px] font-bold text-white transition hover:bg-ink/90 disabled:opacity-60">
                 {saving ? <LoaderCircle size={15} className="animate-spin" /> : editingId ? <Save size={15} /> : <Plus size={15} />}
-                {saving ? "Guardando..." : editingId ? "Guardar" : "Agregar"}
+                {saving ? "Guardando..." : editingId ? "Guardar" : tasks.length > 0 ? "Una tarea por día" : "Agregar"}
               </button>
               {editingId && (
                 <button type="button" aria-label="Cancelar edición" onClick={() => { setEditingId(null); setDraft(blankDraft(dateKey)); }} className="flex h-10 items-center justify-center rounded-lg border border-line bg-white px-3 text-muted hover:text-ink"><X size={16} /></button>
               )}
             </div>
-            <p className="mt-1.5 text-right text-[10px] text-muted">{draft.description.length}/160</p>
+            {!editingId && tasks.length > 0 && <p className="mt-2 text-[10px] text-muted">Ya tienes una tarea para esta fecha. Edítala o elimínala para hacer cambios.</p>}
+            <p className="mt-1.5 text-right text-[10px] text-muted">{draft.description.length}/160 · Ej.: 5 de 10 repeticiones = 50%</p>
           </form>
         </div>
 
         <aside className="rounded-2xl bg-ink p-5 text-white">
-          <p className="text-[11px] font-semibold uppercase tracking-[1.1px] text-white/60">Tu porcentaje del día</p>
-          <p className="mt-3 text-[42px] font-bold leading-none tracking-[-1.5px]">{completionPercent}<span className="ml-1 text-[19px] text-white/60">%</span></p>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15">
-            <div className="h-full rounded-full bg-mint transition-all duration-500" style={{ width: `${completionPercent}%` }} />
-          </div>
-          <p className="mt-3 text-[12px] text-white/70">{completionPercent}% del día completado</p>
-          <p className="mt-1 text-[11px] text-white/55">{completedCount} de {tasks.length} tareas · {allocatedPercent}% asignado</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[1.1px] text-white/60">Tareas completadas</p>
+          <p className="mt-3 text-[42px] font-bold leading-none tracking-[-1.5px]">{completedCount}<span className="ml-1 text-[19px] text-white/60">/ {tasks.length}</span></p>
+          <p className="mt-3 text-[12px] text-white/70">{completedCount} de {tasks.length} tareas del día</p>
           <div className="mt-5 border-t border-white/15 pt-4">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] text-white/70">Meta de referencia</span>
-              <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${completionPercent >= 80 && tasks.length > 0 ? "bg-mint/20 text-mint" : "bg-white/10 text-white/75"}`}>{completionPercent >= 80 && tasks.length > 0 ? "¡Objetivo alcanzado!" : "80%"}</span>
+              <span className="text-[11px] text-white/70">Cálculo por área</span>
+              <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-white/75">50% / ≥80%</span>
             </div>
-            <p className="mt-2 text-[11px] leading-5 text-white/50">El porcentaje suma el valor editable de cada tarea completada. Distribuye hasta 100% entre las tareas del día.</p>
+            <p className="mt-2 text-[11px] leading-5 text-white/50">Solo hay una tarea por día. Por ejemplo, 5 de 10 repeticiones es 50%: suma media sesión; desde 80% suma una sesión completa.</p>
           </div>
         </aside>
       </div>

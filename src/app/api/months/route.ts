@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { countFocusedDays } from "@/lib/focus-days";
-import { categoryConfig, type CategoryKey } from "@/lib/life";
+import { calculateTaskBasedProgress, categoryConfig, type CategoryKey, type DatedDailyTaskProgress } from "@/lib/life";
 import { prisma } from "@/lib/prisma";
 
 function currentMonthKey() {
@@ -30,14 +30,53 @@ async function findOrCreateMonth(monthKey: string, userId: string) {
     include: { categories: true },
   });
 
-  const focusedDays = await countFocusedDays(userId, monthKey);
+  const monthStart = `${monthKey}-01`;
+  const [focusedDays, dailyProgress, tasks] = await Promise.all([
+    countFocusedDays(userId, monthKey),
+    prisma.dailyAreaProgress.findMany({
+      where: { monthId: month.id },
+      select: { categoryKey: true, dateKey: true },
+    }),
+    prisma.dailyTask.findMany({
+      where: { userId, dateKey: { gte: monthStart, lt: nextMonthKey(monthKey) } },
+      orderBy: { createdAt: "asc" },
+      select: { categoryKey: true, dateKey: true, progressPercent: true },
+    }),
+  ]);
+
+  const recordedDatesByCategory = new Map<string, Set<string>>();
+  for (const entry of dailyProgress) {
+    const dates = recordedDatesByCategory.get(entry.categoryKey) ?? new Set<string>();
+    dates.add(entry.dateKey);
+    recordedDatesByCategory.set(entry.categoryKey, dates);
+  }
 
   return {
     ...month,
-    categories: month.categories.map((category) =>
-      category.key === "work" ? { ...category, progress: focusedDays } : category,
-    ),
+    categories: month.categories.map((category) => {
+      const recordedDates = [...(recordedDatesByCategory.get(category.key) ?? [])];
+      if (category.key === "work") return { ...category, progress: focusedDays, recordedDates: [] };
+      if (category.key === "exercise" || category.key === "study" || category.key === "nutrition") {
+        const recordedDatesForCategory = recordedDatesByCategory.get(category.key) ?? new Set<string>();
+        return {
+          ...category,
+          progress: recordedDates.length + calculateTaskBasedProgress(
+            tasks as DatedDailyTaskProgress[],
+            category.key,
+            recordedDatesForCategory,
+          ),
+          recordedDates,
+        };
+      }
+      return { ...category, recordedDates };
+    }),
   };
+}
+
+function nextMonthKey(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const nextMonth = new Date(year, month, 1);
+  return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
 export async function GET() {

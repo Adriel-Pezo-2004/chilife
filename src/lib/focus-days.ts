@@ -8,8 +8,7 @@ export async function countFocusedDays(userId: string, monthKey: string) {
   const dates = await prisma.dailyTask.findMany({
     where: {
       userId,
-      categoryKey: "work",
-      completed: true,
+      progressPercent: { gte: 80 },
       dateKey: { gte: `${monthKey}-01`, lt: nextMonthKey },
     },
     select: { dateKey: true },

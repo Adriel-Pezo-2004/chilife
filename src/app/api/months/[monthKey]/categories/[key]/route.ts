@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { countFocusedDays } from "@/lib/focus-days";
-import { isCategoryKey } from "@/lib/life";
+import { calculateTaskBasedProgress, isCategoryKey, type DatedDailyTaskProgress } from "@/lib/life";
 import { prisma } from "@/lib/prisma";
 
 type RouteContext = {
   params: Promise<{ monthKey: string; key: string }>;
 };
+
+function nextMonthKey(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const nextMonth = new Date(year, month, 1);
+  return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
+}
 
 export async function PATCH(request: Request, context: RouteContext) {
   const { monthKey, key } = await context.params;
@@ -38,7 +44,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     if ("increment" in body) {
       if (key === "work") {
-        return NextResponse.json({ error: "Los días enfocados se registran al completar tareas del área Trabajo." }, { status: 400 });
+        return NextResponse.json({ error: "Los días enfocados se registran al completar cualquier tarea del día." }, { status: 400 });
+      }
+      if (key !== "savings") {
+        return NextResponse.json({ error: "El avance de esta área se calcula automáticamente con las tareas completadas." }, { status: 400 });
       }
       if (
         typeof body.increment !== "number" ||
@@ -68,6 +77,32 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({
         ...category,
         progress: await countFocusedDays(user.id, monthKey),
+      });
+    }
+    if (key === "exercise" || key === "study" || key === "nutrition") {
+      const [recordedProgress, tasks] = await Promise.all([
+        prisma.dailyAreaProgress.findMany({
+          where: { monthId: month.id, categoryKey: key },
+          select: { dateKey: true },
+        }),
+        prisma.dailyTask.findMany({
+          where: {
+            userId: user.id,
+            dateKey: { gte: `${monthKey}-01`, lt: nextMonthKey(monthKey) },
+          },
+          orderBy: { createdAt: "asc" },
+          select: { categoryKey: true, dateKey: true, progressPercent: true },
+        }),
+      ]);
+      const recordedDates = recordedProgress.map((entry) => entry.dateKey);
+      return NextResponse.json({
+        ...category,
+        progress: recordedDates.length + calculateTaskBasedProgress(
+          tasks as DatedDailyTaskProgress[],
+          key,
+          new Set(recordedDates),
+        ),
+        recordedDates,
       });
     }
     return NextResponse.json(category);

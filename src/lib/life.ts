@@ -49,6 +49,7 @@ export type LifeCategoryData = {
   goal: number;
   progress: number;
   budget: number;
+  recordedDates?: string[];
 };
 
 export type LifeMonthData = {
@@ -56,6 +57,42 @@ export type LifeMonthData = {
   monthKey: string;
   categories: LifeCategoryData[];
 };
+
+export type DailyTaskProgress = {
+  progressPercent: number;
+};
+
+export type DatedDailyTaskProgress = DailyTaskProgress & {
+  categoryKey: string;
+  dateKey: string;
+};
+
+export function dailyTaskCompletionPercent(tasks: DailyTaskProgress[]) {
+  return tasks[0]?.progressPercent ?? 0;
+}
+
+export function dailyTaskProgressAward(completionPercent: number) {
+  if (completionPercent >= 80) return 1;
+  if (completionPercent >= 50) return 0.5;
+  return 0;
+}
+
+export function calculateTaskBasedProgress(
+  tasks: DatedDailyTaskProgress[],
+  categoryKey: string,
+  alreadyRecordedDates: Set<string> = new Set(),
+) {
+  const taskByDate = new Map<string, DatedDailyTaskProgress>();
+  for (const task of tasks) {
+    if (alreadyRecordedDates.has(task.dateKey)) continue;
+    if (!taskByDate.has(task.dateKey)) taskByDate.set(task.dateKey, task);
+  }
+
+  return [...taskByDate.values()].reduce(
+    (total, task) => total + (task.categoryKey === categoryKey ? dailyTaskProgressAward(task.progressPercent) : 0),
+    0,
+  );
+}
 
 export function isCategoryKey(value: string): value is CategoryKey {
   return Object.hasOwn(categoryConfig, value);

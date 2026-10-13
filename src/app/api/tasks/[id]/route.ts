@@ -43,38 +43,51 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (
         typeof body.progressPercent !== "number" ||
         !Number.isInteger(body.progressPercent) ||
-        body.progressPercent < 1 ||
+        body.progressPercent < 0 ||
         body.progressPercent > 100
       ) {
-        return NextResponse.json({ error: "El porcentaje de la tarea debe ser un entero entre 1 y 100." }, { status: 400 });
+        return NextResponse.json({ error: "El porcentaje completado debe ser un entero entre 0 y 100." }, { status: 400 });
       }
       data.progressPercent = body.progressPercent;
+      data.completed = body.progressPercent >= 80;
     }
     if ("completed" in body) {
       if (typeof body.completed !== "boolean") return NextResponse.json({ error: "El estado de la tarea no es válido." }, { status: 400 });
       data.completed = body.completed;
+      if (!("progressPercent" in body)) data.progressPercent = body.completed ? 100 : 0;
     }
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: "No se recibieron cambios para guardar." }, { status: 400 });
     }
 
-    if (data.dateKey !== undefined || data.progressPercent !== undefined) {
-      const targetDate = data.dateKey ?? task.dateKey;
-      const assigned = await prisma.dailyTask.aggregate({
-        where: { userId: user.id, dateKey: targetDate, id: { not: task.id } },
-        _sum: { progressPercent: true },
+    if (data.dateKey !== undefined && data.dateKey !== task.dateKey) {
+      const taskOnDate = await prisma.dailyTask.findFirst({
+        where: { userId: user.id, dateKey: data.dateKey, id: { not: task.id } },
+        select: { id: true },
       });
-      if ((assigned._sum.progressPercent ?? 0) + (data.progressPercent ?? task.progressPercent) > 100) {
-        return NextResponse.json({ error: "Los porcentajes asignados a las tareas del día no pueden superar el 100%." }, { status: 400 });
+      if (taskOnDate) {
+        return NextResponse.json({ error: "Ya existe una tarea para ese día. Elimina la otra tarea antes de cambiar la fecha." }, { status: 409 });
       }
     }
 
-    const updated = await prisma.dailyTask.update({ where: { id }, data });
-    return NextResponse.json(updated);
+    let updated;
+    try {
+      updated = await prisma.dailyTask.update({ where: { id }, data });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return NextResponse.json({ error: "Ya existe una tarea para ese día." }, { status: 409 });
+      }
+      throw error;
+    }
+    return NextResponse.json({ ...updated, completed: updated.progressPercent >= 80 });
   } catch (error) {
     console.error("Unable to update a daily task:", error);
     return NextResponse.json({ error: "No se pudo actualizar la tarea." }, { status: 503 });
   }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {

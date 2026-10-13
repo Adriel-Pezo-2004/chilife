@@ -26,6 +26,8 @@ import { DailyTasks, type DailyTask } from "@/app/daily-tasks";
 import {
   categoryConfig,
   categoryPercent,
+  dailyTaskCompletionPercent,
+  dailyTaskProgressAward,
   isCategoryKey,
   lifeBalance,
   rewardTotal,
@@ -51,6 +53,7 @@ const colorClasses: Record<string, { card: string; icon: string; bar: string; ba
 };
 
 const numberFormat = new Intl.NumberFormat("es", { maximumFractionDigits: 0 });
+const progressFormat = new Intl.NumberFormat("es", { maximumFractionDigits: 1 });
 const money = (amount: number) => `S/ ${numberFormat.format(amount)}`;
 
 type AuthenticatedUser = {
@@ -167,7 +170,10 @@ export default function Home() {
     ? Math.round(orderedCategories.reduce((sum, category) => sum + categoryPercent(category), 0) / orderedCategories.length)
     : 0;
 
-  async function updateCategory(key: CategoryKey, change: { goal?: number; budget?: number; increment?: number }) {
+  async function updateCategory(
+    key: CategoryKey,
+    change: { goal?: number; budget?: number; increment?: number; dateKey?: string },
+  ) {
     if (!monthKey) return;
     setBusyKey(key);
     setError("");
@@ -181,7 +187,14 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error ?? "No se pudo guardar el cambio.");
       setMonth((current) =>
         current
-          ? { ...current, categories: current.categories.map((category) => (category.key === key ? data : category)) }
+          ? {
+              ...current,
+              categories: current.categories.map((category) =>
+                category.key === key
+                  ? { ...category, ...data, recordedDates: data.recordedDates ?? category.recordedDates }
+                  : category,
+              ),
+            }
           : current,
       );
     } catch (updateError) {
@@ -195,6 +208,15 @@ export default function Home() {
     const number = Number(value);
     if (!Number.isInteger(number) || number < (field === "budget" ? 0 : 1)) return;
     void updateCategory(key, { [field]: number });
+  }
+
+  function changeMonth(offset: number) {
+    const nextMonthKey = monthOffset(monthKey, offset);
+    const [year, monthNumber] = nextMonthKey.split("-").map(Number);
+    const day = Math.min(Number(selectedDate.slice(-2)), new Date(year, monthNumber, 0).getDate());
+    const nextDate = `${nextMonthKey}-${String(day).padStart(2, "0")}`;
+    setMonthKey(nextMonthKey);
+    setSelectedDate(nextDate);
   }
 
   async function logout() {
@@ -252,12 +274,12 @@ export default function Home() {
             <p className="mt-2 max-w-xl text-[15px] leading-6 text-muted">Cuida cada parte de tu vida. El progreso real no se trata de hacerlo todo, sino de encontrar tu balance.</p>
           </div>
           <div className="flex h-11 w-fit items-center gap-4 rounded-xl border border-line bg-white px-3 shadow-sm">
-            <button onClick={() => setMonthKey(monthOffset(monthKey, -1))} aria-label="Mes anterior" className="rounded-lg p-1 text-muted transition hover:bg-canvas hover:text-ink">
+            <button onClick={() => changeMonth(-1)} aria-label="Mes anterior" className="rounded-lg p-1 text-muted transition hover:bg-canvas hover:text-ink">
               <ChevronLeft size={18} />
             </button>
             <span className="min-w-[130px] text-center text-sm font-semibold capitalize text-ink">{monthName(monthKey)}</span>
             <button
-              onClick={() => setMonthKey(monthOffset(monthKey, 1))}
+              onClick={() => changeMonth(1)}
               disabled={monthKey >= initialMonth()}
               aria-label="Mes siguiente"
               className="rounded-lg p-1 text-muted transition hover:bg-canvas hover:text-ink disabled:opacity-30"
@@ -273,7 +295,7 @@ export default function Home() {
               <Sparkles className="mt-0.5 shrink-0 text-mint" size={19} />
               <div>
                 <h2 className="font-bold">El equilibrio también cuenta</h2>
-                <p className="mt-1 text-muted">Tu balance global usa el promedio armónico de las cinco áreas: avanzar en una no compensa abandonar otra. Las tareas del día aportan el porcentaje que les asignes y aparecen en la tarjeta de su área. Al superar el 80% de una meta mensual, el 10% del presupuesto de esa área se suma a tu fondo de regalo.</p>
+                <p className="mt-1 text-muted">Tu balance global usa el promedio armónico de las cinco áreas: avanzar en una no compensa abandonar otra. Registra una tarea al día y actualiza el porcentaje realmente completado. Desde 80% suma una sesión o día equilibrado; desde 50% y menos de 80%, suma 0.5. Al superar el 80% de una meta mensual, el 10% del presupuesto de esa área se suma a tu fondo de regalo.</p>
               </div>
             </div>
           </section>
@@ -336,7 +358,7 @@ export default function Home() {
           <div className="mb-4 flex items-end justify-between gap-3">
             <div>
               <h2 className="text-[20px] font-bold tracking-[-0.5px] text-ink">Tus cinco áreas</h2>
-              <p className="mt-1 text-[13px] text-muted">Cada una merece un poco de tu atención.</p>
+              <p className="mt-1 text-[13px] text-muted">Cada tarea diaria aporta según cuánto completaste.</p>
             </div>
             <span className="hidden text-[12px] text-muted sm:block">Elige una meta que se sienta posible.</span>
           </div>
@@ -355,11 +377,8 @@ export default function Home() {
                 const areaTasks = dailyTasks.filter(
                   (task) => task.dateKey === selectedDate && task.categoryKey === key,
                 );
-                const assignedToday = areaTasks.reduce((sum, task) => sum + task.progressPercent, 0);
-                const completedToday = areaTasks.reduce(
-                  (sum, task) => sum + (task.completed ? task.progressPercent : 0),
-                  0,
-                );
+                const completedToday = dailyTaskCompletionPercent(areaTasks);
+                const dailyAward = dailyTaskProgressAward(completedToday);
                 return (
                   <article key={category.id} className="rounded-[20px] border border-line bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-card sm:p-6">
                     <div className="flex items-start justify-between">
@@ -373,7 +392,7 @@ export default function Home() {
 
                     <div className="mt-5 flex items-end justify-between">
                       <p className="text-[27px] font-bold leading-none tracking-[-1px] text-ink">
-                        {key === "savings" ? money(category.progress) : category.progress}
+                        {key === "savings" ? money(category.progress) : progressFormat.format(category.progress)}
                         <span className="ml-1.5 text-[12px] font-medium tracking-normal text-muted">/ {key === "savings" ? money(category.goal) : category.goal}</span>
                       </p>
                       <span className="pb-0.5 text-[11px] text-muted">{config.unit}</span>
@@ -384,8 +403,7 @@ export default function Home() {
 
                     <div className={`mt-4 rounded-xl px-3 py-3 ${colors.card}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-muted">Tareas del día · {completedToday}% completado</span>
-                        <span className="shrink-0 text-[10px] font-semibold text-muted">{assignedToday}% asignado</span>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-muted">Completitud de hoy · {completedToday}%</span>
                       </div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
                         <div className={`h-full rounded-full transition-all duration-500 ${colors.bar}`} style={{ width: `${completedToday}%` }} />
@@ -454,7 +472,7 @@ export default function Home() {
                     <div className="mt-4 flex gap-2">
                       {key === "work" ? (
                         <p className="flex h-10 flex-1 items-center justify-center rounded-xl bg-blue-card px-2 text-center text-[11px] font-semibold text-blue">
-                          Sube al completar tareas de Trabajo
+                          Sube al completar cualquier tarea del día
                         </p>
                       ) : key === "savings" ? (
                         <label className="flex h-10 min-w-0 items-center gap-1.5 rounded-xl border border-line px-2.5">
@@ -469,15 +487,30 @@ export default function Home() {
                             className="w-[68px] min-w-0 border-0 bg-transparent p-0 text-[12px] font-semibold text-ink outline-none focus:ring-0"
                           />
                         </label>
-                      ) : null}
-                      {key !== "work" && (
+                      ) : (
+                        <p className="flex h-10 flex-1 items-center justify-center rounded-xl bg-canvas px-2 text-center text-[11px] font-semibold text-muted">
+                          {dailyAward === 1
+                            ? `Hoy suma 1 ${key === "nutrition" ? "día equilibrado" : "sesión"}`
+                            : dailyAward === 0.5
+                              ? `Hoy suma 0.5 ${key === "nutrition" ? "día equilibrado" : "sesión"}`
+                              : areaTasks.length > 0
+                                ? "Desde 50% suma 0.5"
+                                : "El avance se calcula con tus tareas"}
+                        </p>
+                      )}
+                      {key === "savings" && (
                         <button
-                          disabled={busy || category.progress >= category.goal || (key === "savings" && !savingsAmountValid)}
-                          onClick={() => void updateCategory(key, { increment: key === "savings" ? savingsAmountValue : 1 })}
+                          disabled={
+                            busy ||
+                            !savingsAmountValid
+                          }
+                          onClick={() =>
+                            void updateCategory(key, { increment: savingsAmountValue })
+                          }
                           className={`flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl text-[12px] font-bold transition disabled:cursor-not-allowed disabled:bg-canvas disabled:text-muted ${unlocked ? "bg-mint-card text-mint hover:bg-mint/15" : "bg-ink text-white hover:bg-ink/90"}`}
                         >
-                          {busy ? <LoaderCircle className="animate-spin" size={15} /> : category.progress >= category.goal ? <Check size={15} /> : <Plus size={15} />}
-                          {busy ? "Guardando..." : category.progress >= category.goal ? "Meta alcanzada" : key === "savings" ? "Registrar ahorro" : "Registrar avance"}
+                          {busy ? <LoaderCircle className="animate-spin" size={15} /> : <Plus size={15} />}
+                          {busy ? "Guardando..." : "Registrar ahorro"}
                         </button>
                       )}
                     </div>

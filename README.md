@@ -42,15 +42,16 @@ El comando `db:push` no forma parte del build de Vercel: los cambios de esquema 
 ## Cómo funciona el balance y el regalo
 
 - Cada área tiene una meta mensual y un presupuesto editable.
-- El botón **Registrar avance** suma una unidad a ejercicio, trabajo, estudio y alimentación, hasta alcanzar la meta.
+- Ejercicio, estudio y alimentación avanzan automáticamente según el porcentaje completado de la única tarea del día. Trabajo suma un día enfocado cuando la tarea llega al 80%; ahorro se registra manualmente.
 - En ahorro defines una meta monetaria y registras el importe que apartaste; el avance se mide sobre esa cantidad.
 - El balance global usa la media armónica de los porcentajes de avance de las cinco áreas; así, una sola área muy avanzada no compensa que otra se quede atrás.
 - Al superar el 80% de una meta (es decir, al alcanzar al menos el 81%), ChiLife aparta el 10% del presupuesto de esa área en el fondo para el regalo del mes.
 - Los planes y avances se guardan por mes en MongoDB Atlas. El esquema usa el proveedor MongoDB de Prisma.
 - Crea una cuenta con correo y contraseña desde la pantalla de registro; el inicio de sesión usa una cookie firmada y protegida, y las contraseñas se almacenan con hash bcrypt.
-- Cada cuenta tiene planes mensuales y tareas propias. Las tareas diarias guardan su fecha, área, descripción, porcentaje y estado; se pueden crear, editar, completar o eliminar.
-- Asigna a cada tarea un porcentaje del día, con un máximo combinado de 100% por fecha. El avance diario suma el porcentaje de las tareas completadas; las tarjetas de cada área muestran las tareas relacionadas y cuánto aportaron ese día.
-- El avance mensual de cada área se conserva por separado del aporte diario, ya que sus metas pueden medir sesiones, días u objetivos monetarios distintos.
-- El avance mensual de **Trabajo** cuenta los días distintos del mes que tienen al menos una tarea de trabajo completada; completar varias tareas del área en el mismo día solo cuenta un día enfocado.
+- Cada cuenta tiene planes mensuales y tareas propias. Las tareas diarias guardan su fecha, área, descripción, porcentaje completado y estado; se pueden crear, editar, completar o eliminar.
+- Solo se puede registrar una tarea por día. La API y un índice único de MongoDB impiden duplicar tareas de la misma cuenta y fecha. Su porcentaje representa la parte realmente completada; por ejemplo, hacer 5 de 10 repeticiones equivale a 50%.
+- En ejercicio y estudio, completar al menos 80% de la tarea suma 1 sesión; desde 50% hasta menos de 80% suma 0.5 sesión; menos de 50% no suma. En alimentación se aplica la misma regla para los días equilibrados. Trabajo registra un día enfocado al llegar al 80%.
+- El avance mensual suma esos valores diarios, lo que permite medias sesiones o días equilibrados. Los registros manuales históricos se conservan y no se duplican si ese mismo día ya tiene tareas evaluadas.
+- El avance mensual de **Trabajo** cuenta los días distintos del mes en que la tarea alcanza al menos 80% de completitud.
 - Los montos se muestran en soles peruanos (S/).
 - Al primer registro, los planes mensuales antiguos que aún no tenían propietario se asocian a esa cuenta para conservar los datos de la instalación previa.

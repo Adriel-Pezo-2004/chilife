@@ -16,7 +16,10 @@ export async function GET(request: Request) {
       where: { userId: user.id, dateKey },
       orderBy: { createdAt: "asc" },
     });
-    return NextResponse.json(tasks);
+    return NextResponse.json(tasks.map((task) => ({
+      ...task,
+      completed: task.progressPercent >= 80,
+    })));
   } catch (error) {
     console.error("Unable to load daily tasks:", error);
     return NextResponse.json({ error: "No se pudieron cargar las tareas del día." }, { status: 503 });
@@ -47,32 +50,45 @@ export async function POST(request: Request) {
       !("progressPercent" in body) ||
       typeof body.progressPercent !== "number" ||
       !Number.isInteger(body.progressPercent) ||
-      body.progressPercent < 1 ||
+      body.progressPercent < 0 ||
       body.progressPercent > 100
     ) {
-      return NextResponse.json({ error: "El porcentaje de la tarea debe ser un entero entre 1 y 100." }, { status: 400 });
+      return NextResponse.json({ error: "El porcentaje completado debe ser un entero entre 0 y 100." }, { status: 400 });
     }
 
-    const assigned = await prisma.dailyTask.aggregate({
+    const existingTask = await prisma.dailyTask.findFirst({
       where: { userId: user.id, dateKey: body.dateKey },
-      _sum: { progressPercent: true },
+      select: { id: true },
     });
-    if ((assigned._sum.progressPercent ?? 0) + body.progressPercent > 100) {
-      return NextResponse.json({ error: "Los porcentajes asignados a las tareas del día no pueden superar el 100%." }, { status: 400 });
+    if (existingTask) {
+      return NextResponse.json({ error: "Ya existe una tarea para este día. Edítala o elimínala antes de agregar otra." }, { status: 409 });
     }
 
-    const task = await prisma.dailyTask.create({
-      data: {
-        userId: user.id,
-        dateKey: body.dateKey,
-        categoryKey: body.categoryKey,
-        description: body.description.trim(),
-        progressPercent: body.progressPercent,
-      },
-    });
-    return NextResponse.json(task, { status: 201 });
+    let task;
+    try {
+      task = await prisma.dailyTask.create({
+        data: {
+          userId: user.id,
+          dateKey: body.dateKey,
+          categoryKey: body.categoryKey,
+          description: body.description.trim(),
+          progressPercent: body.progressPercent,
+          completed: body.progressPercent >= 80,
+        },
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return NextResponse.json({ error: "Ya existe una tarea para este día. Edítala o elimínala antes de agregar otra." }, { status: 409 });
+      }
+      throw error;
+    }
+    return NextResponse.json({ ...task, completed: task.progressPercent >= 80 }, { status: 201 });
   } catch (error) {
     console.error("Unable to create a daily task:", error);
     return NextResponse.json({ error: "No se pudo agregar la tarea." }, { status: 503 });
   }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }

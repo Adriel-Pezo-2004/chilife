@@ -8,13 +8,14 @@ datasource db {
 }
 
 model LifeMonth {
-  id         String         @id @default(auto()) @map("_id") @db.ObjectId
-  monthKey   String
-  userId     String?        @db.ObjectId
-  user       User?          @relation(fields: [userId], references: [id])
-  categories LifeCategory[]
-  createdAt  DateTime       @default(now())
-  updatedAt  DateTime       @updatedAt
+  id            String              @id @default(auto()) @map("_id") @db.ObjectId
+  monthKey      String
+  userId        String?             @db.ObjectId
+  user          User?               @relation(fields: [userId], references: [id])
+  categories    LifeCategory[]
+  dailyProgress DailyAreaProgress[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 
   @@unique([userId, monthKey])
 }
@@ -50,10 +51,22 @@ model DailyTask {
   dateKey         String
   categoryKey     String
   description     String
-  progressPercent Int      @default(10)
+  progressPercent Int      @default(0)
   completed       Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  @@index([userId, dateKey])
+  @@unique([userId, dateKey])
+}
+
+model DailyAreaProgress {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  monthId     String    @db.ObjectId
+  month       LifeMonth @relation(fields: [monthId], references: [id])
+  categoryKey String
+  dateKey     String
+  createdAt   DateTime  @default(now())
+
+  @@unique([monthId, categoryKey, dateKey])
+  @@index([monthId, dateKey])
 }
