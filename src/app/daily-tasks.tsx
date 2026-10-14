@@ -206,7 +206,7 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
         <div>
           <p className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[1.3px] text-mint"><CalendarDays size={15} /> Tu día, a tu ritmo</p>
           <h2 className="mt-2 text-[22px] font-bold tracking-[-0.7px] text-ink">Avance del día</h2>
-          <p className="mt-1 text-[13px] text-muted">Registra una sola tarea al día y actualiza el porcentaje que realmente completaste.</p>
+          <p className="mt-1 text-[13px] text-muted">Agrega varias tareas al día, en una o más áreas, y registra cuánto completaste de cada una.</p>
         </div>
         <div className="flex w-fit items-center gap-3 rounded-xl border border-line bg-white px-3 py-2">
           <button onClick={() => changeDate(moveDate(dateKey, -1))} aria-label="Día anterior" className="rounded-lg p-1 text-muted transition hover:bg-canvas hover:text-ink"><ChevronLeft size={17} /></button>
@@ -354,15 +354,14 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
                   className="h-10 rounded-lg border border-line bg-white px-2 text-[12px] text-ink outline-none focus:border-mint"
                 />
               )}
-              <button disabled={saving || (!editingId && tasks.length > 0)} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-[12px] font-bold text-white transition hover:bg-ink/90 disabled:opacity-60">
+              <button disabled={saving} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-[12px] font-bold text-white transition hover:bg-ink/90 disabled:opacity-60">
                 {saving ? <LoaderCircle size={15} className="animate-spin" /> : editingId ? <Save size={15} /> : <Plus size={15} />}
-                {saving ? "Guardando..." : editingId ? "Guardar" : tasks.length > 0 ? "Una tarea por día" : "Agregar"}
+                {saving ? "Guardando..." : editingId ? "Guardar" : "Agregar"}
               </button>
               {editingId && (
                 <button type="button" aria-label="Cancelar edición" onClick={() => { setEditingId(null); setDraft(blankDraft(dateKey)); }} className="flex h-10 items-center justify-center rounded-lg border border-line bg-white px-3 text-muted hover:text-ink"><X size={16} /></button>
               )}
             </div>
-            {!editingId && tasks.length > 0 && <p className="mt-2 text-[10px] text-muted">Ya tienes una tarea para esta fecha. Edítala o elimínala para hacer cambios.</p>}
             <p className="mt-1.5 text-right text-[10px] text-muted">{draft.description.length}/160 · Ej.: 5 de 10 repeticiones = 50%</p>
           </form>
         </div>
@@ -376,7 +375,7 @@ export function DailyTasks({ onTasksChange, onDateChange, onTaskMutation }: Dail
               <span className="text-[11px] text-white/70">Cálculo por área</span>
               <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-white/75">50% / ≥80%</span>
             </div>
-            <p className="mt-2 text-[11px] leading-5 text-white/50">Solo hay una tarea por día. Por ejemplo, 5 de 10 repeticiones es 50%: suma media sesión; desde 80% suma una sesión completa.</p>
+            <p className="mt-2 text-[11px] leading-5 text-white/50">Cada tarea aporta por separado: 50% suma media sesión y desde 80% suma una sesión completa.</p>
           </div>
         </aside>
       </div>

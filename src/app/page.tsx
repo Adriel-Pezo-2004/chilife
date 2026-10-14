@@ -18,7 +18,6 @@ import {
   PiggyBank,
   Plus,
   Sparkles,
-  Wallet,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AuthScreen } from "@/app/auth-screen";
@@ -62,6 +61,12 @@ type AuthenticatedUser = {
   email: string;
 };
 
+type YearSummaryData = {
+  year: number;
+  throughMonth: number;
+  categories: LifeCategoryData[];
+};
+
 function monthName(monthKey: string) {
   const [year, month] = monthKey.split("-").map(Number);
   return new Intl.DateTimeFormat("es-MX", { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
@@ -89,6 +94,9 @@ export default function Home() {
   const [monthKey, setMonthKey] = useState(initialMonth);
   const [month, setMonth] = useState<LifeMonthData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [yearSummary, setYearSummary] = useState<YearSummaryData | null>(null);
+  const [yearLoading, setYearLoading] = useState(true);
+  const [yearError, setYearError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [savingsAmount, setSavingsAmount] = useState("500");
   const [error, setError] = useState("");
@@ -142,13 +150,35 @@ export default function Home() {
     }
   }, []);
 
+  const loadYearSummary = useCallback(async (key: string) => {
+    setYearLoading(true);
+    setYearError("");
+    try {
+      const response = await fetch(`/api/years/${key.slice(0, 4)}?through=${key.slice(5, 7)}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "No se pudo cargar el balance anual.");
+      setYearSummary(data as YearSummaryData);
+    } catch (loadError) {
+      setYearSummary(null);
+      setYearError(loadError instanceof Error ? loadError.message : "No se pudo cargar el balance anual.");
+    } finally {
+      setYearLoading(false);
+    }
+  }, []);
+
   const handleDailyTaskMutation = useCallback(() => {
-    if (user) void loadMonth(monthKey);
-  }, [loadMonth, monthKey, user]);
+    if (user) {
+      void loadMonth(monthKey);
+      void loadYearSummary(monthKey);
+    }
+  }, [loadMonth, loadYearSummary, monthKey, user]);
 
   useEffect(() => {
-    if (user) void loadMonth(monthKey);
-  }, [loadMonth, monthKey, user]);
+    if (user) {
+      void loadMonth(monthKey);
+      void loadYearSummary(monthKey);
+    }
+  }, [loadMonth, loadYearSummary, monthKey, user]);
 
   const orderedCategories = useMemo(
     () =>
@@ -159,16 +189,23 @@ export default function Home() {
     [month],
   );
 
-  const balance = lifeBalance(orderedCategories);
+  const annualCategories = yearSummary?.categories ?? [];
+  const balance = lifeBalance(annualCategories);
   const giftFund = rewardTotal(orderedCategories);
-  const monthlyBudget = orderedCategories.reduce((sum, category) => sum + category.budget, 0);
-  const earnedCount = orderedCategories.filter((category) => categoryPercent(category) > 80).length;
+  const monthlyBudget = orderedCategories.reduce(
+    (sum, category) => sum + (category.key === "savings" ? 0 : category.budget),
+    0,
+  );
   const savingsAmountValue = Number(savingsAmount);
   const savingsAmountValid =
     Number.isInteger(savingsAmountValue) && savingsAmountValue >= 1 && savingsAmountValue <= 10000000;
   const monthProgress = orderedCategories.length
     ? Math.round(orderedCategories.reduce((sum, category) => sum + categoryPercent(category), 0) / orderedCategories.length)
     : 0;
+  const annualProgress = annualCategories.length
+    ? Math.round(annualCategories.reduce((sum, category) => sum + categoryPercent(category), 0) / annualCategories.length)
+    : 0;
+  const dailyProgress = dailyTaskCompletionPercent(dailyTasks);
 
   async function updateCategory(
     key: CategoryKey,
@@ -197,6 +234,7 @@ export default function Home() {
             }
           : current,
       );
+      void loadYearSummary(monthKey);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "No se pudo guardar el cambio.");
     } finally {
@@ -295,7 +333,7 @@ export default function Home() {
               <Sparkles className="mt-0.5 shrink-0 text-mint" size={19} />
               <div>
                 <h2 className="font-bold">El equilibrio también cuenta</h2>
-                <p className="mt-1 text-muted">Tu balance global usa el promedio armónico de las cinco áreas: avanzar en una no compensa abandonar otra. Registra una tarea al día y actualiza el porcentaje realmente completado. Desde 80% suma una sesión o día equilibrado; desde 50% y menos de 80%, suma 0.5. Al superar el 80% de una meta mensual, el 10% del presupuesto de esa área se suma a tu fondo de regalo.</p>
+                <p className="mt-1 text-muted">Tu balance anual usa el promedio armónico del progreso acumulado de las cinco áreas desde enero hasta el mes seleccionado. El dashboard separa el avance diario, mensual y anual. Cada tarea con al menos 80% suma una sesión o día equilibrado; desde 50% y menos de 80%, suma 0.5. Ahorro conserva su propia meta monetaria y no participa en el presupuesto para el regalo.</p>
               </div>
             </div>
           </section>
@@ -304,19 +342,23 @@ export default function Home() {
         {error && (
           <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             <span>{error}</span>
-            <button onClick={() => void loadMonth(monthKey)} className="font-semibold underline underline-offset-2">Reintentar</button>
+            <button onClick={() => { void loadMonth(monthKey); void loadYearSummary(monthKey); }} className="font-semibold underline underline-offset-2">Reintentar</button>
           </div>
         )}
 
-        <section className="mb-7 grid gap-4 lg:grid-cols-[1.55fr_1fr_1fr]">
+        <section className="mb-7 grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div className="relative overflow-hidden rounded-[22px] bg-ink p-6 text-white sm:p-7">
             <div className="pointer-events-none absolute -right-12 -top-24 h-64 w-64 rounded-full border border-white/10" />
             <div className="pointer-events-none absolute -right-2 -top-14 h-44 w-44 rounded-full border border-white/10" />
             <div className="relative flex h-full flex-col justify-between gap-6 sm:flex-row sm:items-center">
               <div>
-                <p className="flex items-center gap-2 text-[13px] font-semibold text-white/65"><Sparkles size={15} /> BALANCE DE TU VIDA</p>
-                <p className="mt-3 text-[52px] font-bold leading-none tracking-[-2px]">{loading ? "—" : `${balance}%`}</p>
-                <p className="mt-3 max-w-xs text-[13px] leading-5 text-white/65">{balance >= 80 ? "Vas en equilibrio. Sigue cuidando cada área." : "Un paso pequeño en cada área hace la diferencia."}</p>
+                <p className="flex items-center gap-2 text-[13px] font-semibold text-white/65"><Sparkles size={15} /> BALANCE ANUAL DE TU VIDA</p>
+                <p className="mt-3 text-[52px] font-bold leading-none tracking-[-2px]">{yearLoading ? "—" : `${balance}%`}</p>
+                <p className="mt-3 max-w-xs text-[13px] leading-5 text-white/65">
+                  {yearError
+                    ? yearError
+                    : `Progreso acumulado de enero a ${monthName(monthKey)}: ${yearLoading ? "—" : `${annualProgress}%`}. ${balance >= 80 ? "Vas en equilibrio; sigue cuidando cada área." : "Un paso pequeño en cada área hace la diferencia."}`}
+                </p>
               </div>
               <div className="relative flex h-[112px] w-[112px] shrink-0 items-center justify-center self-center sm:mr-3">
                 <svg className="h-full w-full -rotate-90" viewBox="0 0 112 112" aria-label={`Balance ${balance}%`}>
@@ -327,23 +369,32 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="rounded-[22px] border border-line bg-white p-6 sm:p-7">
+          <div className="rounded-[22px] border border-line bg-white p-5 sm:p-6">
             <div className="flex items-center justify-between">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-mint-card text-mint"><Wallet size={19} /></span>
-              <span className="rounded-full bg-mint-card px-2.5 py-1 text-[11px] font-bold text-mint">+10% por área</span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-mint-card text-mint"><Activity size={18} /></span>
+              <span className="rounded-full bg-canvas px-2 py-1 text-[10px] font-bold text-muted">DÍA</span>
             </div>
-            <p className="mt-5 text-[13px] font-medium text-muted">Fondo para tu regalo</p>
-            <p className="mt-1 text-[30px] font-bold tracking-[-1px] text-ink">{loading ? "—" : money(giftFund)}</p>
-            <p className="mt-1 text-[12px] text-muted">{earnedCount} de 5 áreas desbloqueadas</p>
+            <p className="mt-4 text-[13px] font-medium text-muted">Progreso diario</p>
+            <p className="mt-1 text-[30px] font-bold tracking-[-1px] text-ink">{dailyTasks.length === 0 ? "0%" : `${progressFormat.format(dailyProgress)}%`}</p>
+            <p className="mt-1 text-[11px] text-muted">{dailyTasks.filter((task) => task.completed).length} de {dailyTasks.length} tareas al 80% · {selectedDate}</p>
           </div>
-          <div className="rounded-[22px] border border-line bg-white p-6 sm:p-7">
+          <div className="rounded-[22px] border border-line bg-white p-5 sm:p-6">
             <div className="flex items-center justify-between">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-lilac-card text-lilac"><ArrowUpRight size={19} /></span>
-              <span className="text-[12px] font-semibold text-muted">Este mes</span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-lilac-card text-lilac"><ArrowUpRight size={18} /></span>
+              <span className="rounded-full bg-canvas px-2 py-1 text-[10px] font-bold text-muted">MES</span>
             </div>
-            <p className="mt-5 text-[13px] font-medium text-muted">Progreso promedio</p>
+            <p className="mt-4 text-[13px] font-medium text-muted">Progreso mensual</p>
             <p className="mt-1 text-[30px] font-bold tracking-[-1px] text-ink">{loading ? "—" : `${monthProgress}%`}</p>
-            <p className="mt-1 text-[12px] text-muted">{loading ? "Cargando tu progreso..." : `${money(monthlyBudget)} en presupuesto planeado`}</p>
+            <p className="mt-1 text-[11px] text-muted">{monthName(monthKey)} · {money(monthlyBudget)} presupuestados</p>
+          </div>
+          <div className="rounded-[22px] border border-line bg-white p-5 sm:p-6">
+            <div className="flex items-center justify-between">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-yellow-card text-yellow"><ArrowUpRight size={18} /></span>
+              <span className="rounded-full bg-canvas px-2 py-1 text-[10px] font-bold text-muted">AÑO</span>
+            </div>
+            <p className="mt-4 text-[13px] font-medium text-muted">Progreso anual</p>
+            <p className="mt-1 text-[30px] font-bold tracking-[-1px] text-ink">{yearLoading ? "—" : `${annualProgress}%`}</p>
+            <p className="mt-1 text-[11px] text-muted">Enero – {monthName(monthKey)}</p>
           </div>
         </section>
 
@@ -372,19 +423,30 @@ export default function Home() {
                 const colors = colorClasses[config.color];
                 const Icon = icons[config.icon];
                 const percent = categoryPercent(category);
-                const unlocked = percent > 80;
+                const unlocked = key !== "savings" && percent > 80;
+                const savingsGoalMet = key === "savings" && category.progress >= category.goal;
                 const busy = busyKey === key;
                 const areaTasks = dailyTasks.filter(
                   (task) => task.dateKey === selectedDate && task.categoryKey === key,
                 );
                 const completedToday = dailyTaskCompletionPercent(areaTasks);
-                const dailyAward = dailyTaskProgressAward(completedToday);
+                const dailyAward = areaTasks.reduce(
+                  (total, task) => total + dailyTaskProgressAward(task.progressPercent),
+                  0,
+                );
+                const dailyAwardUnit = key === "nutrition"
+                  ? dailyAward > 1 ? "días equilibrados" : "día equilibrado"
+                  : dailyAward > 1 ? "sesiones" : "sesión";
                 return (
                   <article key={category.id} className="rounded-[20px] border border-line bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-card sm:p-6">
                     <div className="flex items-start justify-between">
                       <span className={`flex h-11 w-11 items-center justify-center rounded-[14px] ${colors.icon}`}><Icon size={20} strokeWidth={1.9} /></span>
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${unlocked ? "bg-mint-card text-mint" : "bg-canvas text-muted"}`}>
-                        {unlocked ? <span className="flex items-center gap-1"><Check size={12} /> Premio activo</span> : `${percent}% completado`}
+                        {unlocked
+                          ? <span className="flex items-center gap-1"><Check size={12} /> Premio activo</span>
+                          : savingsGoalMet
+                            ? <span className="flex items-center gap-1"><Check size={12} /> Meta alcanzada</span>
+                            : `${percent}% completado`}
                       </span>
                     </div>
                     <h3 className="mt-4 text-[17px] font-bold text-ink">{config.label}</h3>
@@ -403,7 +465,7 @@ export default function Home() {
 
                     <div className={`mt-4 rounded-xl px-3 py-3 ${colors.card}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-muted">Completitud de hoy · {completedToday}%</span>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.6px] text-muted">Completitud promedio de hoy · {progressFormat.format(completedToday)}%</span>
                       </div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
                         <div className={`h-full rounded-full transition-all duration-500 ${colors.bar}`} style={{ width: `${completedToday}%` }} />
@@ -423,13 +485,15 @@ export default function Home() {
                       )}
                     </div>
 
-                    <div className={`mt-4 flex items-center justify-between rounded-xl px-3 py-2.5 ${colors.card}`}>
-                      <div className="flex items-center gap-2">
-                        <Gift size={15} className={colors.badge} />
-                        <span className="text-[11px] font-medium text-muted">{unlocked ? "Aporta al regalo" : "Al llegar al 81%"}</span>
+                    {key !== "savings" && (
+                      <div className={`mt-4 flex items-center justify-between rounded-xl px-3 py-2.5 ${colors.card}`}>
+                        <div className="flex items-center gap-2">
+                          <Gift size={15} className={colors.badge} />
+                          <span className="text-[11px] font-medium text-muted">{unlocked ? "Aporta al regalo" : "Al llegar al 81%"}</span>
+                        </div>
+                        <strong className="text-[12px] text-ink">{unlocked ? money(Math.round(category.budget * 0.1)) : `+${money(Math.round(category.budget * 0.1))}`}</strong>
                       </div>
-                      <strong className="text-[12px] text-ink">{unlocked ? money(Math.round(category.budget * 0.1)) : `+${money(Math.round(category.budget * 0.1))}`}</strong>
-                    </div>
+                    )}
 
                     <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
                       <div>
@@ -450,24 +514,26 @@ export default function Home() {
                           />
                         </div>
                       </div>
-                      <div className="text-right">
-                        <label htmlFor={`budget-${key}`} className="block text-[10px] font-medium text-muted">PRESUPUESTO</label>
-                        <div className="mt-1 flex items-center justify-end gap-1">
-                          <span className="text-[12px] font-semibold text-muted">S/</span>
-                          <input
-                            id={`budget-${key}`}
-                            aria-label={`Presupuesto de ${config.label}`}
-                            type="number"
-                            min="0"
-                            max="100000000"
-                            defaultValue={category.budget}
-                            key={`${key}-budget-${category.budget}`}
-                            onBlur={(event) => saveNumber(key, "budget", event.target.value)}
-                            onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
-                            className="w-[76px] border-0 bg-transparent p-0 text-right text-[13px] font-semibold text-ink outline-none focus:ring-0"
-                          />
+                      {key !== "savings" && (
+                        <div className="text-right">
+                          <label htmlFor={`budget-${key}`} className="block text-[10px] font-medium text-muted">PRESUPUESTO</label>
+                          <div className="mt-1 flex items-center justify-end gap-1">
+                            <span className="text-[12px] font-semibold text-muted">S/</span>
+                            <input
+                              id={`budget-${key}`}
+                              aria-label={`Presupuesto de ${config.label}`}
+                              type="number"
+                              min="0"
+                              max="100000000"
+                              defaultValue={category.budget}
+                              key={`${key}-budget-${category.budget}`}
+                              onBlur={(event) => saveNumber(key, "budget", event.target.value)}
+                              onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+                              className="w-[76px] border-0 bg-transparent p-0 text-right text-[13px] font-semibold text-ink outline-none focus:ring-0"
+                            />
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                     <div className="mt-4 flex gap-2">
                       {key === "work" ? (
@@ -489,13 +555,11 @@ export default function Home() {
                         </label>
                       ) : (
                         <p className="flex h-10 flex-1 items-center justify-center rounded-xl bg-canvas px-2 text-center text-[11px] font-semibold text-muted">
-                          {dailyAward === 1
-                            ? `Hoy suma 1 ${key === "nutrition" ? "día equilibrado" : "sesión"}`
-                            : dailyAward === 0.5
-                              ? `Hoy suma 0.5 ${key === "nutrition" ? "día equilibrado" : "sesión"}`
-                              : areaTasks.length > 0
-                                ? "Desde 50% suma 0.5"
-                                : "El avance se calcula con tus tareas"}
+                          {dailyAward > 0
+                            ? `Hoy suma ${progressFormat.format(dailyAward)} ${dailyAwardUnit}`
+                            : areaTasks.length > 0
+                              ? "Desde 50% suma 0.5"
+                              : "El avance se calcula con tus tareas"}
                         </p>
                       )}
                       {key === "savings" && (
@@ -531,13 +595,13 @@ export default function Home() {
             <div className="p-6 sm:p-7">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-yellow-card text-yellow"><Gift size={19} /></span>
               <h2 className="mt-4 text-[18px] font-bold text-ink">Un regalo que te ganas tú.</h2>
-              <p className="mt-2 max-w-sm text-[13px] leading-5 text-muted">Cada área que pasa del 80% suma su recompensa. Al cierre del mes, celebra todo lo que construiste.</p>
+              <p className="mt-2 max-w-sm text-[13px] leading-5 text-muted">Cada área con presupuesto que supera el 80% suma su recompensa. El ahorro se registra por separado y no forma parte del presupuesto para el regalo.</p>
             </div>
             <div className="flex items-center gap-4 border-t border-line p-6 md:border-l md:border-t-0 sm:p-7">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-canvas text-muted"><ArrowDownRight size={18} /></span>
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[1px] text-muted">Tu esfuerzo</p>
-                <p className="mt-1 text-[13px] font-semibold text-ink">Supera el 80% en cada área</p>
+                <p className="mt-1 text-[13px] font-semibold text-ink">Supera el 80% de una meta con presupuesto</p>
               </div>
             </div>
             <div className="flex items-center gap-4 border-t border-line p-6 md:border-l md:border-t-0 sm:p-7">

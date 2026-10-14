@@ -56,39 +56,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "El porcentaje completado debe ser un entero entre 0 y 100." }, { status: 400 });
     }
 
-    const existingTask = await prisma.dailyTask.findFirst({
-      where: { userId: user.id, dateKey: body.dateKey },
-      select: { id: true },
+    const task = await prisma.dailyTask.create({
+      data: {
+        userId: user.id,
+        dateKey: body.dateKey,
+        categoryKey: body.categoryKey,
+        description: body.description.trim(),
+        progressPercent: body.progressPercent,
+        completed: body.progressPercent >= 80,
+      },
     });
-    if (existingTask) {
-      return NextResponse.json({ error: "Ya existe una tarea para este día. Edítala o elimínala antes de agregar otra." }, { status: 409 });
-    }
-
-    let task;
-    try {
-      task = await prisma.dailyTask.create({
-        data: {
-          userId: user.id,
-          dateKey: body.dateKey,
-          categoryKey: body.categoryKey,
-          description: body.description.trim(),
-          progressPercent: body.progressPercent,
-          completed: body.progressPercent >= 80,
-        },
-      });
-    } catch (error) {
-      if (isUniqueConstraintError(error)) {
-        return NextResponse.json({ error: "Ya existe una tarea para este día. Edítala o elimínala antes de agregar otra." }, { status: 409 });
-      }
-      throw error;
-    }
     return NextResponse.json({ ...task, completed: task.progressPercent >= 80 }, { status: 201 });
   } catch (error) {
     console.error("Unable to create a daily task:", error);
     return NextResponse.json({ error: "No se pudo agregar la tarea." }, { status: 503 });
   }
-}
-
-function isUniqueConstraintError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }

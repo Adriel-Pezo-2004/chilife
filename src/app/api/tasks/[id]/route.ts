@@ -60,34 +60,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: "No se recibieron cambios para guardar." }, { status: 400 });
     }
 
-    if (data.dateKey !== undefined && data.dateKey !== task.dateKey) {
-      const taskOnDate = await prisma.dailyTask.findFirst({
-        where: { userId: user.id, dateKey: data.dateKey, id: { not: task.id } },
-        select: { id: true },
-      });
-      if (taskOnDate) {
-        return NextResponse.json({ error: "Ya existe una tarea para ese día. Elimina la otra tarea antes de cambiar la fecha." }, { status: 409 });
-      }
-    }
-
-    let updated;
-    try {
-      updated = await prisma.dailyTask.update({ where: { id }, data });
-    } catch (error) {
-      if (isUniqueConstraintError(error)) {
-        return NextResponse.json({ error: "Ya existe una tarea para ese día." }, { status: 409 });
-      }
-      throw error;
-    }
+    const updated = await prisma.dailyTask.update({ where: { id }, data });
     return NextResponse.json({ ...updated, completed: updated.progressPercent >= 80 });
   } catch (error) {
     console.error("Unable to update a daily task:", error);
     return NextResponse.json({ error: "No se pudo actualizar la tarea." }, { status: 503 });
   }
-}
-
-function isUniqueConstraintError(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "P2002";
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {

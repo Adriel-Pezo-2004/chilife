@@ -68,7 +68,9 @@ export type DatedDailyTaskProgress = DailyTaskProgress & {
 };
 
 export function dailyTaskCompletionPercent(tasks: DailyTaskProgress[]) {
-  return tasks[0]?.progressPercent ?? 0;
+  return tasks.length === 0
+    ? 0
+    : tasks.reduce((total, task) => total + task.progressPercent, 0) / tasks.length;
 }
 
 export function dailyTaskProgressAward(completionPercent: number) {
@@ -82,14 +84,12 @@ export function calculateTaskBasedProgress(
   categoryKey: string,
   alreadyRecordedDates: Set<string> = new Set(),
 ) {
-  const taskByDate = new Map<string, DatedDailyTaskProgress>();
-  for (const task of tasks) {
-    if (alreadyRecordedDates.has(task.dateKey)) continue;
-    if (!taskByDate.has(task.dateKey)) taskByDate.set(task.dateKey, task);
-  }
-
-  return [...taskByDate.values()].reduce(
-    (total, task) => total + (task.categoryKey === categoryKey ? dailyTaskProgressAward(task.progressPercent) : 0),
+  return tasks.reduce(
+    (total, task) =>
+      total +
+      (task.categoryKey === categoryKey && !alreadyRecordedDates.has(task.dateKey)
+        ? dailyTaskProgressAward(task.progressPercent)
+        : 0),
     0,
   );
 }
@@ -117,7 +117,11 @@ export function lifeBalance(categories: LifeCategoryData[]) {
 
 export function rewardTotal(categories: LifeCategoryData[]) {
   return categories.reduce(
-    (total, category) => total + (categoryPercent(category) > 80 ? Math.round(category.budget * 0.1) : 0),
+    (total, category) =>
+      total +
+      (category.key !== "savings" && categoryPercent(category) > 80
+        ? Math.round(category.budget * 0.1)
+        : 0),
     0,
   );
 }

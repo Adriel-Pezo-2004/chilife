@@ -37,6 +37,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.goal = body.goal;
     }
     if ("budget" in body) {
+      if (key === "savings") {
+        return NextResponse.json({ error: "El ahorro se registra por separado y no tiene presupuesto asociado." }, { status: 400 });
+      }
       if (typeof body.budget !== "number" || !Number.isInteger(body.budget) || body.budget < 0 || body.budget > 100000000) {
         return NextResponse.json({ error: "El presupuesto debe ser un monto entero positivo." }, { status: 400 });
       }
